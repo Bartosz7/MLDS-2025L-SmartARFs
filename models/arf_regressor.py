@@ -7,6 +7,7 @@ from river.tree.splitter import Splitter
 from .base_tree_regressor import BaseTreeRegressor
 from .base_forest import BaseForest
 
+
 class ARFRegressor(BaseForest, base.Regressor):
     _MEAN = "mean"
     _MEDIAN = "median"

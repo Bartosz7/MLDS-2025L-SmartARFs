@@ -24,6 +24,8 @@ class SmartARFDynamicWeightsRegressor(ARFRegressorDynamicWeights):
         regression_pruning_error_threshold: float = 0.1,
         accuracy_drop_threshold: float = 0.5,
         monitor_window: int = 100,
+        error_mode: str = "std",
+        error_threshold_factor: float = 1.0,
         **kwargs,
     ):
         """
@@ -34,12 +36,18 @@ class SmartARFDynamicWeightsRegressor(ARFRegressorDynamicWeights):
         min_ensemble_size: Minimum number of base learners to keep in the ensemble.
         """
         effective_n_models = max(n_models, min_ensemble_size)
-        super().__init__(n_models=effective_n_models, **kwargs)
+        super().__init__(
+            n_models=effective_n_models,
+            error_mode=error_mode,
+            error_threshold_factor=error_threshold_factor,
+            **kwargs
+        )
         self.max_models = max_models
         self.min_ensemble_size = min_ensemble_size
         self.regression_pruning_error_threshold = regression_pruning_error_threshold
         self.accuracy_drop_threshold = accuracy_drop_threshold
         self.monitor_window = monitor_window
+        self.dynamic_weighting_error_factor = error_threshold_factor
 
         self.model_count_history: list[int] = []  # To plot ensemble size
         self._accuracy_window: list[collections.deque] = (
@@ -73,7 +81,7 @@ class SmartARFDynamicWeightsRegressor(ARFRegressorDynamicWeights):
             self._init_ensemble(sorted(x.keys()))
 
         current_step = sum(
-            model.total_weight_observed for model in self.data
+            getattr(model, '_train_weight_seen_by_model', 0.0) for model in self.data
         )  # A proxy for time
         self.model_count_history.append(len(self.data))
 

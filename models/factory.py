@@ -96,7 +96,7 @@ def make_smart_arf_dw(n_models=10,
                       error_mode="std",
                       error_threshold_factor=1.0,
                       verbose=True):
-    return SmartARFDynamicWeightsRegressor(
+    model = SmartARFDynamicWeightsRegressor(
         n_models=n_models,
         max_models=max_models,
         min_ensemble_size=min_ensemble_size,
@@ -112,5 +112,7 @@ def make_smart_arf_dw(n_models=10,
         monitor_window=monitor_window,
         error_mode=error_mode,
         error_threshold_factor=error_threshold_factor,
-        verbose_logging=verbose,
     )
+    if hasattr(model, 'verbose_logging'):
+        model.verbose_logging = verbose
+    return model

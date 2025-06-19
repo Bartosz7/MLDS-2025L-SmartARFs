@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 from .arf_regressor_dw import ARFRegressorDynamicWeights
 from river import base, stats
 from river.utils.random import poisson
-from .base_tree_regressor import BaseTreeRegressor
-from .smart_arf_dw_regressor import ARFRegressorDynamicWeights
 
 
 class SmartARFDynamicWeightsRegressor(ARFRegressorDynamicWeights):
@@ -22,13 +20,23 @@ class SmartARFDynamicWeightsRegressor(ARFRegressorDynamicWeights):
         self,
         n_models: int = 10,
         max_models: int = 30,
-        regression_pruning_error_threshold: float = 0.1,  # Absolute error for "accurate"
-        accuracy_drop_threshold: float = 0.5,  # Pruning if proxy acc drops by this factor
+        min_ensemble_size: int = 5,
+        regression_pruning_error_threshold: float = 0.1,
+        accuracy_drop_threshold: float = 0.5,
         monitor_window: int = 100,
-        **kwargs,  # Pass other ARFRegressorDynamicWeights params
+        **kwargs,
     ):
-        super().__init__(n_models=n_models, **kwargs)  # Pass n_models for initial setup
+        """
+        Adaptive Random Forest Regressor that combines:
+        1. Dynamic tree weighting (adapted 0.9/1.1 rule for regression).
+        2. Dynamic ensemble size management (adding trees on drift, pruning on
+           proxy "accuracy" drop or exceeding max_models).
+        min_ensemble_size: Minimum number of base learners to keep in the ensemble.
+        """
+        effective_n_models = max(n_models, min_ensemble_size)
+        super().__init__(n_models=effective_n_models, **kwargs)
         self.max_models = max_models
+        self.min_ensemble_size = min_ensemble_size
         self.regression_pruning_error_threshold = regression_pruning_error_threshold
         self.accuracy_drop_threshold = accuracy_drop_threshold
         self.monitor_window = monitor_window
@@ -70,9 +78,8 @@ class SmartARFDynamicWeightsRegressor(ARFRegressorDynamicWeights):
         self.model_count_history.append(len(self.data))
 
         # --- Stage 0: Prepare for iteration ---
-        num_models_at_start_of_step = len(
-            self.data
-        )  # Cache initial number for this step
+        num_models_at_start_of_step = len(self.data)
+        # Cache initial number for this step
         tree_predictions = [0.0] * num_models_at_start_of_step
         drift_detected_indices = []
         warning_detected_indices = []
@@ -198,12 +205,12 @@ class SmartARFDynamicWeightsRegressor(ARFRegressorDynamicWeights):
             # If a drift directly causes pruning, careful index management is needed.
             # Here, we add first, then prune later if max_models is exceeded.
 
-            current_idx = (
-                original_idx  # This needs careful thought if removals happen mid-loop.
-            )
+            current_idx = original_idx
+            # This needs careful thought if removals happen mid-loop.
             # For now, assume original_idx is valid against current self.data
-            if current_idx in processed_drift_indices_this_step or current_idx >= len(
-                self.data
+            if (
+                current_idx in processed_drift_indices_this_step
+                or current_idx >= len(self.data)
             ):
                 continue
 
@@ -212,7 +219,6 @@ class SmartARFDynamicWeightsRegressor(ARFRegressorDynamicWeights):
                 self._drift_tracker[current_idx] += 1
 
             new_tree_candidate = None
-            promoted_from_background = False
             if (
                 self._background is not None
                 and current_idx < len(self._background)
@@ -220,7 +226,6 @@ class SmartARFDynamicWeightsRegressor(ARFRegressorDynamicWeights):
             ):
                 new_tree_candidate = self._background[current_idx]
                 self._background[current_idx] = None  # Consume background tree
-                promoted_from_background = True
                 # logging.info(f"➕ Candidate tree from background of tree {current_idx} for potential addition.")
 
             if new_tree_candidate:  # Try to add this tree
@@ -236,9 +241,7 @@ class SmartARFDynamicWeightsRegressor(ARFRegressorDynamicWeights):
                         # or that the pruning logic correctly shifts indices.
                         # The _remove_model adjusts trackers for indices > removed_index.
                         if worst_idx_to_prune < current_idx:
-                            current_idx -= (
-                                1  # Adjust current_idx if an earlier model was removed
-                            )
+                            current_idx -= 1  # Adjust current_idx if an earlier model was removed
                     else:  # Cannot prune, so cannot add
                         # logging.warning("Ensemble at max capacity, but no worst model found to prune. Cannot add new tree.")
                         new_tree_candidate = None  # Do not add
@@ -413,6 +416,9 @@ class SmartARFDynamicWeightsRegressor(ARFRegressorDynamicWeights):
         return valid_indices[worst_val_idx_in_list]
 
     def _remove_model(self, index: int):
+        # Prevent pruning below min_ensemble_size
+        if len(self.data) <= getattr(self, 'min_ensemble_size', 1):
+            return
         if not (0 <= index < len(self.data)):
             # logging.warning(f"Attempted to remove model at invalid index {index}. Ensemble size: {len(self.data)}")
             return

@@ -332,10 +332,10 @@ class SmartARFRegressor(ARFRegressor):
         # Add vertical drift and warning markers
         if mark_warnings and hasattr(self, "warning_points"):
             for step in self.warning_points:
-                plt.axvline(x=step, color='orange', linestyle='--', alpha=0.4, label='Drift Warning')
+                plt.axvline(x=step, color='orange', linestyle='--', alpha=0.2, label='Drift Warning')
         if mark_drifts and hasattr(self, "drift_points"):
             for step in self.drift_points:
-                plt.axvline(x=step, color='red', linestyle='-', alpha=0.5, label='Drift Detected')
+                plt.axvline(x=step, color='k', linestyle='-', alpha=0.2, label='Drift Detected')
 
         # Avoid duplicate legend labels
         handles, labels = plt.gca().get_legend_handles_labels()
